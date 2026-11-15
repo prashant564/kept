@@ -1,38 +1,87 @@
-import Feather from '@expo/vector-icons/Feather';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import Animated, {
+  useAnimatedProps,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle } from 'react-native-svg';
 
-import { Button, Card, IconButton, ProgressBar, StatusPill, Txt, useStatusColors } from '@/components/ui';
-import { getCategory } from '@/lib/categories';
+import { Celebration } from '@/components/celebration';
+import { Button, celebrateHaptic, Clay, EASE, enter, IconButton, statusTone, STATUS_LABEL, Tag, Txt, useCountUp, useToneColors } from '@/components/ui';
+import { getCategory, itemEmoji } from '@/lib/categories';
 import { formatDate, parseISODate } from '@/lib/dates';
 import { formatMoney } from '@/lib/format';
 import { exportItemPdf } from '@/lib/pdf';
 import type { Attachment } from '@/lib/types';
 import { describeRemaining, getCoverage, warrantyLabel } from '@/lib/warranty';
 import { useVault } from '@/state/vault';
-import { GUTTER, radius, space, useTheme } from '@/theme';
+import { fonts, GUTTER, radius, space, useTheme } from '@/theme';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+/** Donut that fills to `progress` with a spring. */
+function Donut({ progress, color, track, size = 96 }: { progress: number; color: string; track: string; size?: number }) {
+  const stroke = 13;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const p = useSharedValue(0);
+  useEffect(() => {
+    p.value = withDelay(150, withTiming(progress, { duration: 800, easing: EASE }));
+  }, [progress, p]);
+  const props = useAnimatedProps(() => ({ strokeDashoffset: circ * (1 - p.value) }));
+  return (
+    <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
+      <Circle cx={size / 2} cy={size / 2} r={r} stroke={track} strokeWidth={stroke} fill="none" />
+      <AnimatedCircle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke} strokeLinecap="round" fill="none" strokeDasharray={`${circ} ${circ}`} animatedProps={props} />
+    </Svg>
+  );
+}
 
 export default function ItemScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, celebrate } = useLocalSearchParams<{ id: string; celebrate?: string }>();
   const insets = useSafeAreaInsets();
-  const { colors, dark } = useTheme();
+  const { colors } = useTheme();
   const { getItem, deleteItem, settings } = useVault();
   const [viewer, setViewer] = useState<Attachment | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [party, setParty] = useState(celebrate === '1');
   const item = getItem(id);
 
   const c = item ? getCoverage(item) : null;
-  const { fg } = useStatusColors(c?.status ?? 'none');
+  const tone = statusTone(c?.status ?? 'none');
+  const toneColors = useToneColors(tone);
+  const days = useCountUp(c?.daysLeft && c.daysLeft > 0 ? c.daysLeft : 0, 1000);
+
+  // Hero object settles into place.
+  const drop = useSharedValue(0);
+  useEffect(() => {
+    drop.value = withTiming(1, { duration: 450, easing: EASE });
+  }, [drop]);
+  const heroStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (1 - drop.value) * 12 }, { rotate: '-6deg' }, { scale: 0.92 + drop.value * 0.08 }],
+    opacity: drop.value,
+  }));
+
+  useEffect(() => {
+    if (!party) return;
+    celebrateHaptic();
+    const t = setTimeout(() => setParty(false), 2200);
+    return () => clearTimeout(t);
+  }, [party]);
 
   if (!item || !c) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', gap: space.lg }}>
+        <Text style={{ fontSize: 50 }}>🤔</Text>
         <Txt variant="title">Item not found</Txt>
-        <Button title="Go back" kind="secondary" size="md" onPress={() => router.back()} />
+        <Button title="Go back" kind="white" size="md" onPress={() => router.back()} />
       </View>
     );
   }
@@ -40,6 +89,7 @@ export default function ItemScreen() {
   const category = getCategory(item.category);
   const photo = item.attachments.find((a) => a.kind === 'image');
   const purchased = parseISODate(item.purchaseDate);
+  const heroTone = heroColors(category.tone, colors);
 
   const onExport = async () => {
     if (!settings.isPro) {
@@ -58,7 +108,7 @@ export default function ItemScreen() {
 
   const onDelete = () =>
     Alert.alert(`Delete ${item.name}?`, 'The item, its receipts and reminders will be removed.', [
-      { text: 'Cancel', style: 'cancel' },
+      { text: 'Keep it', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
@@ -74,175 +124,156 @@ export default function ItemScreen() {
     else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(a.uri, { mimeType: 'application/pdf' });
   };
 
-  const bigNumber =
-    c.status === 'lifetime' ? '∞' : c.status === 'none' ? '—' : c.daysLeft !== null && c.daysLeft >= 0 ? String(c.daysLeft) : '0';
-  const bigCaption =
-    c.status === 'lifetime'
-      ? 'Covered for life'
-      : c.status === 'none'
-        ? 'No warranty on file'
-        : c.status === 'expired'
-          ? describeRemaining(c.daysLeft ?? 0)
-          : c.daysLeft === 1
-            ? 'day of cover left'
-            : 'days of cover left';
+  const donutProgress = c.status === 'lifetime' ? 1 : c.status === 'none' ? 0 : 1 - c.progress;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 120 }} showsVerticalScrollIndicator={false}>
-        {/* Hero */}
-        <View style={{ height: 300 + insets.top, backgroundColor: dark ? category.tint.dark : category.tint.light, alignItems: 'center', justifyContent: 'center' }}>
-          {photo ? (
-            <Pressable onPress={() => setViewer(photo)} style={{ position: 'absolute', inset: 0 }}>
-              <Image source={{ uri: photo.uri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-            </Pressable>
-          ) : (
-            <View style={{ alignItems: 'center', gap: space.md, marginTop: insets.top }}>
-              <View style={{ width: 96, height: 96, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.55)', alignItems: 'center', justifyContent: 'center' }}>
-                <Feather name={category.icon} size={40} color="#15140F" />
-              </View>
-              <Txt variant="overline" style={{ color: '#15140F', opacity: 0.6 }}>
-                {category.label}
-              </Txt>
-            </View>
-          )}
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + space.sm, paddingHorizontal: GUTTER, paddingBottom: insets.bottom + 120, gap: space.lg }} showsVerticalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <IconButton icon="arrow-left" accessibilityLabel="Back" onPress={() => router.back()} />
+          <IconButton icon="edit-2" tone="yellow" accessibilityLabel="Edit" onPress={() => router.push({ pathname: '/add', params: { id: item.id } })} />
         </View>
 
-        {/* Sheet */}
-        <View style={{ marginTop: -28, backgroundColor: colors.bg, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: GUTTER, paddingTop: space.xxl, gap: space.xl }}>
-          <View style={{ gap: space.sm }}>
-            <StatusPill status={c.status} />
-            <Txt variant="display">{item.name}</Txt>
-            <Txt variant="body" tone="secondary">
-              {[item.store, formatDate(purchased)].filter(Boolean).join(' · ')}
-            </Txt>
-          </View>
-
-          {/* Coverage */}
-          <Card style={{ gap: space.lg }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, flexShrink: 1 }}>
-                <Txt variant="hero" style={{ color: fg }}>
-                  {bigNumber}
-                </Txt>
-                <Txt variant="caption" tone="secondary" style={{ flexShrink: 1 }}>
-                  {bigCaption}
-                </Txt>
-              </View>
-              <Txt variant="label" tone="secondary">
-                {warrantyLabel(item.warrantyMonths)}
-              </Txt>
-            </View>
-            {c.expiresOn && (
-              <View style={{ gap: space.sm }}>
-                <ProgressBar progress={c.progress} color={fg} height={8} />
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Txt variant="caption" tone="secondary">
-                    {formatDate(purchased)}
-                  </Txt>
-                  <Txt variant="caption" tone="secondary">
-                    {formatDate(c.expiresOn)}
-                  </Txt>
-                </View>
-              </View>
-            )}
-            {c.returnDeadline && (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: space.md,
-                  padding: space.md,
-                  borderRadius: radius.md,
-                  backgroundColor: c.returnOpen ? colors.warningSoft : colors.surfaceMuted,
-                }}>
-                <Feather name="rotate-ccw" size={16} color={c.returnOpen ? colors.warning : colors.inkTertiary} />
-                <Txt variant="bodyStrong" style={{ flex: 1, color: c.returnOpen ? colors.warning : colors.inkSecondary }}>
-                  {c.returnOpen
-                    ? `Return by ${formatDate(c.returnDeadline)} · ${c.returnDaysLeft}d left`
-                    : `Return window closed ${formatDate(c.returnDeadline)}`}
-                </Txt>
-              </View>
-            )}
-          </Card>
-
-          {/* Details */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.md }}>
-            <Detail label="Price paid" value={formatMoney(item.price, item.currency)} />
-            <Detail label="Category" value={category.label} />
-            <Detail label="Purchased" value={formatDate(purchased)} />
-            <Detail label="Serial" value={item.serial || '—'} mono />
-          </View>
-
-          {/* Receipts */}
-          <View>
-            <Txt variant="title" style={{ marginBottom: space.md }}>
-              Proof of purchase
-            </Txt>
-            {item.attachments.length === 0 ? (
-              <Card onPress={() => router.push({ pathname: '/add', params: { id: item.id } })} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, borderStyle: 'dashed', borderColor: colors.lineStrong }}>
-                <Feather name="plus-circle" size={20} color={colors.inkSecondary} />
-                <View style={{ flex: 1 }}>
-                  <Txt variant="bodyStrong">No receipt yet</Txt>
-                  <Txt variant="caption" tone="secondary">
-                    Add a photo or PDF so you can claim later.
-                  </Txt>
-                </View>
-              </Card>
+        {/* Stage */}
+        <Animated.View entering={enter(0)}>
+          <Clay color={heroTone.bg} ledgeColor={heroTone.ledge} ledge={6} rounded={34} onPress={photo ? () => setViewer(photo) : undefined} contentStyle={{ height: 230, alignItems: 'center', justifyContent: 'center' }}>
+            {photo ? (
+              <Image source={{ uri: photo.uri }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} contentFit="cover" />
             ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -GUTTER }} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.md }}>
-                {item.attachments.map((a) => (
-                  <Pressable key={a.id} onPress={() => openAttachment(a)} style={{ width: 120, height: 160 }}>
-                    {a.kind === 'image' ? (
-                      <Image source={{ uri: a.uri }} style={{ width: '100%', height: '100%', borderRadius: radius.md }} contentFit="cover" />
-                    ) : (
-                      <View style={{ flex: 1, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', padding: 10, gap: 8 }}>
-                        <Feather name="file-text" size={28} color={colors.danger} />
-                        <Txt variant="caption" numberOfLines={3} style={{ textAlign: 'center', fontSize: 11 }}>
-                          {a.name}
-                        </Txt>
-                      </View>
-                    )}
-                  </Pressable>
-                ))}
-              </ScrollView>
+              <Animated.Text style={[{ fontSize: 110 }, heroStyle]}>{itemEmoji(item)}</Animated.Text>
             )}
-          </View>
-
-          {item.notes ? (
-            <View>
-              <Txt variant="title" style={{ marginBottom: space.md }}>
-                Notes
-              </Txt>
-              <Card>
-                <Txt variant="body">{item.notes}</Txt>
-              </Card>
+            <View style={{ position: 'absolute', top: 14, right: 14 }}>
+              <View style={{ backgroundColor: toneColors.solid, borderRadius: 14, paddingHorizontal: 12, height: 32, justifyContent: 'center' }}>
+                <Text style={{ fontFamily: fonts.black, fontSize: 13, color: '#FFFFFF' }}>
+                  {c.status === 'expired' ? '⌛ ' : '✓ '}
+                  {STATUS_LABEL[c.status]}
+                </Text>
+              </View>
             </View>
-          ) : null}
+          </Clay>
+        </Animated.View>
 
-          <View style={{ flexDirection: 'row', gap: space.md }}>
-            <Button title="Edit" kind="secondary" icon="edit-2" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/add', params: { id: item.id } })} />
-            <Button title="Delete" kind="danger" icon="trash-2" style={{ flex: 1 }} onPress={onDelete} />
-          </View>
-        </View>
+        <Animated.View entering={enter(1)}>
+          <Txt variant="display">{item.name}</Txt>
+          <Txt variant="bodyStrong" tone="secondary" style={{ marginTop: 2 }}>
+            {[item.store, formatDate(purchased), formatMoney(item.price, item.currency)].filter(Boolean).join(' · ')}
+          </Txt>
+        </Animated.View>
+
+        {/* Coverage */}
+        <Animated.View entering={enter(2)}>
+          <Clay contentStyle={{ padding: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
+            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+              <Donut progress={donutProgress} color={toneColors.solid} track={colors.surfaceMuted} />
+              <Text style={{ position: 'absolute', fontFamily: fonts.black, fontSize: 18, color: colors.ink }}>
+                {c.status === 'lifetime' ? '∞' : `${Math.round(donutProgress * 100)}%`}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              {c.status === 'lifetime' ? (
+                <Txt variant="display">Forever 💫</Txt>
+              ) : c.status === 'none' ? (
+                <Txt variant="title">No warranty</Txt>
+              ) : c.status === 'expired' ? (
+                <Txt variant="title">{describeRemaining(c.daysLeft ?? 0)}</Txt>
+              ) : (
+                <>
+                  <Txt variant="hero" style={{ fontSize: 42, lineHeight: 46 }}>
+                    {Math.round(days)}
+                  </Txt>
+                  <Txt variant="label" tone="secondary">
+                    days of cover left
+                  </Txt>
+                </>
+              )}
+              <Txt variant="caption" style={{ marginTop: 4 }}>
+                {warrantyLabel(item.warrantyMonths)}
+                {c.expiresOn ? ` · ends ${formatDate(c.expiresOn)}` : ''}
+              </Txt>
+            </View>
+          </Clay>
+        </Animated.View>
+
+        {c.returnDeadline && (
+          <Animated.View entering={enter(3)}>
+            <Clay color={c.returnOpen ? colors.yellowSoft : colors.surface} ledgeColor={c.returnOpen ? colors.yellow : colors.ledge} contentStyle={{ padding: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+              <Text style={{ fontSize: 26 }}>{c.returnOpen ? '↩️' : '🔒'}</Text>
+              <View style={{ flex: 1 }}>
+                <Txt variant="headline">{c.returnOpen ? `Return window closes in ${c.returnDaysLeft} ${c.returnDaysLeft === 1 ? 'day' : 'days'}` : 'Return window closed'}</Txt>
+                <Txt variant="caption" tone="secondary">
+                  {c.returnOpen ? `Last day: ${formatDate(c.returnDeadline)}` : formatDate(c.returnDeadline)}
+                </Txt>
+              </View>
+            </Clay>
+          </Animated.View>
+        )}
+
+        <Animated.View entering={enter(4)} style={{ flexDirection: 'row', gap: space.md }}>
+          <Detail emoji="🏷️" label="Category" value={category.label} />
+          <Detail emoji="#️⃣" label="Serial" value={item.serial || '—'} />
+        </Animated.View>
+
+        {/* Receipts */}
+        <Animated.View entering={enter(5)}>
+          <Txt variant="title" style={{ marginBottom: space.md }}>
+            Proof of purchase 🧾
+          </Txt>
+          {item.attachments.length === 0 ? (
+            <Clay onPress={() => router.push({ pathname: '/add', params: { id: item.id } })} contentStyle={{ padding: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+              <Text style={{ fontSize: 30 }}>📸</Text>
+              <View style={{ flex: 1 }}>
+                <Txt variant="headline">No receipt yet</Txt>
+                <Txt variant="caption" tone="secondary">
+                  Add a photo or PDF so you can claim later.
+                </Txt>
+              </View>
+              <Tag tone="primary" label="Add" />
+            </Clay>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -GUTTER }} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.md }}>
+              {item.attachments.map((a) => (
+                <Pressable key={a.id} onPress={() => openAttachment(a)} style={{ width: 118, height: 156 }}>
+                  {a.kind === 'image' ? (
+                    <Image source={{ uri: a.uri }} style={{ width: '100%', height: '100%', borderRadius: radius.md }} contentFit="cover" />
+                  ) : (
+                    <View style={{ flex: 1, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', padding: 10, gap: 8 }}>
+                      <Text style={{ fontSize: 36 }}>📄</Text>
+                      <Txt variant="caption" numberOfLines={3} style={{ textAlign: 'center', fontSize: 11 }}>
+                        {a.name}
+                      </Txt>
+                    </View>
+                  )}
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+        </Animated.View>
+
+        {item.notes ? (
+          <Animated.View entering={enter(6)}>
+            <Clay contentStyle={{ padding: space.lg, gap: 4 }}>
+              <Txt variant="tiny" tone="secondary">
+                📝 Notes
+              </Txt>
+              <Txt variant="body">{item.notes}</Txt>
+            </Clay>
+          </Animated.View>
+        ) : null}
+
+        <Button title="Delete item" kind="danger" size="md" emoji="🗑️" onPress={onDelete} />
       </ScrollView>
 
-      {/* Floating nav */}
-      <View style={{ position: 'absolute', top: insets.top + space.sm, left: GUTTER, right: GUTTER, flexDirection: 'row', justifyContent: 'space-between' }}>
-        <IconButton icon="arrow-left" tone="glass" accessibilityLabel="Back" onPress={() => router.back()} />
-        <IconButton icon="edit-2" tone="glass" accessibilityLabel="Edit" onPress={() => router.push({ pathname: '/add', params: { id: item.id } })} />
+      <View style={{ position: 'absolute', left: GUTTER, right: GUTTER, bottom: insets.bottom + space.lg }}>
+        <Button title="Get my claim PDF" emoji="📄" loading={exporting} onPress={onExport} />
       </View>
 
-      {/* Primary action */}
-      <View style={{ position: 'absolute', left: GUTTER, right: GUTTER, bottom: insets.bottom + space.lg }}>
-        <Button title="Export claim PDF" icon="file-text" loading={exporting} onPress={onExport} style={{ shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 10 }} />
-      </View>
+      {party && <Celebration title="Saved & protected!" subtitle={c.expiresOn ? `We’ll remind you before ${formatDate(c.expiresOn)}` : 'It’s safe in your vault'} />}
 
       <Modal visible={viewer !== null} transparent animationType="fade" onRequestClose={() => setViewer(null)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.94)' }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(22,17,46,0.96)' }}>
           {viewer && <Image source={{ uri: viewer.uri }} style={{ flex: 1 }} contentFit="contain" />}
           <View style={{ position: 'absolute', top: insets.top + space.sm, right: GUTTER }}>
-            <IconButton icon="x" tone="glass" accessibilityLabel="Close" onPress={() => setViewer(null)} />
+            <IconButton icon="x" accessibilityLabel="Close" onPress={() => setViewer(null)} />
           </View>
         </View>
       </Modal>
@@ -250,16 +281,32 @@ export default function ItemScreen() {
   );
 }
 
-function Detail({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  const { colors } = useTheme();
+function heroColors(tone: string, colors: ReturnType<typeof useTheme>['colors']) {
+  switch (tone) {
+    case 'pink':
+      return { bg: colors.pinkSoft, ledge: colors.pink };
+    case 'yellow':
+      return { bg: colors.yellowSoft, ledge: colors.yellow };
+    case 'green':
+      return { bg: colors.greenSoft, ledge: colors.green };
+    case 'orange':
+      return { bg: colors.orangeSoft, ledge: colors.orange };
+    case 'grey':
+      return { bg: colors.greySoft, ledge: colors.ledge };
+    default:
+      return { bg: colors.primarySoft, ledge: colors.ledge };
+  }
+}
+
+function Detail({ emoji, label, value }: { emoji: string; label: string; value: string }) {
   return (
-    <View style={{ width: '47.5%', flexGrow: 1, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: space.lg, gap: 4 }}>
-      <Txt variant="overline" tone="tertiary">
-        {label}
+    <Clay style={{ flex: 1 }} contentStyle={{ padding: space.lg, gap: 4 }}>
+      <Txt variant="tiny" tone="secondary">
+        {emoji} {label}
       </Txt>
-      <Txt variant="headline" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={mono ? { fontVariant: ['tabular-nums'] } : undefined}>
+      <Txt variant="headline" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
         {value}
       </Txt>
-    </View>
+    </Clay>
   );
 }

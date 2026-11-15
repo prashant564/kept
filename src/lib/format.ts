@@ -1,5 +1,3 @@
-export const CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK', 'JPY', 'INR'] as const;
-
 export function formatMoney(amount: number | null, currency: string, compact = false): string {
   if (amount === null || Number.isNaN(amount)) return '—';
   try {

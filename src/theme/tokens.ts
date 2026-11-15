@@ -1,76 +1,87 @@
 /**
- * Kept design tokens.
+ * Kept design tokens — "Playful Clay".
  *
- * Direction: warm "paper" neutrals, ink-black primary surfaces, one electric
- * lime accent, and an editorial serif for display numbers and titles.
+ * Candy colours on a soft lavender base. Every raised surface has a "ledge"
+ * colour drawn underneath it so cards and buttons read as chunky, pressable
+ * objects. Rounded, heavy Nunito for all type.
  */
 
 export const palette = {
   light: {
-    bg: '#F3F0EA',
+    bg: '#F3EEFF',
     surface: '#FFFFFF',
-    surfaceMuted: '#EAE6DE',
-    surfaceSunken: '#E2DDD3',
-    ink: '#15140F',
-    inkSecondary: '#67625A',
-    inkTertiary: '#A29C91',
-    line: 'rgba(21,20,15,0.08)',
-    lineStrong: 'rgba(21,20,15,0.16)',
-    inverse: '#15140F',
-    onInverse: '#F7F5F0',
-    onInverseMuted: 'rgba(247,245,240,0.6)',
-    inverseTint: 'rgba(247,245,240,0.08)',
-    inverseTrack: 'rgba(247,245,240,0.14)',
-    accent: '#D4F25A',
-    onAccent: '#15140F',
-    positive: '#2E7D57',
-    positiveSoft: '#DDEFE3',
-    warning: '#C9761A',
-    warningSoft: '#F8E7CF',
-    danger: '#BE4436',
-    dangerSoft: '#F6DCD7',
-    neutralSoft: '#E7E3DB',
-    overlay: 'rgba(21,20,15,0.4)',
-    tabBar: 'rgba(255,255,255,0.72)',
+    surfaceMuted: '#ECE6FF',
+    ledge: '#DCD2FF',
+    ink: '#2A1F5C',
+    inkSecondary: '#8B7FC7',
+    inkTertiary: '#B4A9E6',
+    line: 'rgba(42,31,92,0.08)',
+
+    primary: '#7C5CFF',
+    primaryLedge: '#5B3FE0',
+    primarySoft: '#E9E3FF',
+    onPrimary: '#FFFFFF',
+
+    pink: '#FF6B9D',
+    pinkLedge: '#E0457A',
+    pinkSoft: '#FFE4EE',
+    yellow: '#FFD43B',
+    yellowLedge: '#E0B000',
+    yellowSoft: '#FFF3C4',
+    green: '#22C38E',
+    greenLedge: '#16A374',
+    greenSoft: '#DDF7EC',
+    orange: '#F08C00',
+    orangeSoft: '#FFEBD1',
+    red: '#F0506E',
+    redSoft: '#FFE0E6',
+    grey: '#9A92C4',
+    greySoft: '#EEEBF8',
+
+    overlay: 'rgba(42,31,92,0.35)',
   },
   dark: {
-    bg: '#0D0D0B',
-    surface: '#181815',
-    surfaceMuted: '#22221E',
-    surfaceSunken: '#2B2B26',
-    ink: '#F4F1EA',
-    inkSecondary: '#A9A49A',
-    inkTertiary: '#6E6A62',
-    line: 'rgba(244,241,234,0.08)',
-    lineStrong: 'rgba(244,241,234,0.16)',
-    inverse: '#F4F1EA',
-    onInverse: '#15140F',
-    onInverseMuted: 'rgba(21,20,15,0.6)',
-    inverseTint: 'rgba(21,20,15,0.06)',
-    inverseTrack: 'rgba(21,20,15,0.12)',
-    accent: '#D4F25A',
-    onAccent: '#15140F',
-    positive: '#5CC08A',
-    positiveSoft: 'rgba(92,192,138,0.14)',
-    warning: '#F0A54A',
-    warningSoft: 'rgba(240,165,74,0.15)',
-    danger: '#EF7A6B',
-    dangerSoft: 'rgba(239,122,107,0.15)',
-    neutralSoft: 'rgba(244,241,234,0.08)',
-    overlay: 'rgba(0,0,0,0.6)',
-    tabBar: 'rgba(30,30,27,0.72)',
+    bg: '#16112E',
+    surface: '#231C45',
+    surfaceMuted: '#2D2556',
+    ledge: '#0D0920',
+    ink: '#F3EEFF',
+    inkSecondary: '#A89CE0',
+    inkTertiary: '#6E63A8',
+    line: 'rgba(243,238,255,0.08)',
+
+    primary: '#8F74FF',
+    primaryLedge: '#5B3FE0',
+    primarySoft: 'rgba(143,116,255,0.18)',
+    onPrimary: '#FFFFFF',
+
+    pink: '#FF6B9D',
+    pinkLedge: '#C8386A',
+    pinkSoft: 'rgba(255,107,157,0.16)',
+    yellow: '#FFD43B',
+    yellowLedge: '#B88F00',
+    yellowSoft: 'rgba(255,212,59,0.14)',
+    green: '#2BD69C',
+    greenLedge: '#16A374',
+    greenSoft: 'rgba(43,214,156,0.15)',
+    orange: '#FFA733',
+    orangeSoft: 'rgba(255,167,51,0.15)',
+    red: '#FF6F88',
+    redSoft: 'rgba(255,111,136,0.15)',
+    grey: '#8C84B8',
+    greySoft: 'rgba(243,238,255,0.07)',
+
+    overlay: 'rgba(0,0,0,0.55)',
   },
 } as const;
 
 export type Palette = { [K in keyof typeof palette.light]: string };
 
 export const fonts = {
-  display: 'InstrumentSerif_400Regular',
-  displayItalic: 'InstrumentSerif_400Regular_Italic',
-  regular: 'Inter_400Regular',
-  medium: 'Inter_500Medium',
-  semibold: 'Inter_600SemiBold',
-  bold: 'Inter_700Bold',
+  semibold: 'Nunito_600SemiBold',
+  bold: 'Nunito_700Bold',
+  extrabold: 'Nunito_800ExtraBold',
+  black: 'Nunito_900Black',
 } as const;
 
 export const space = {
@@ -84,14 +95,16 @@ export const space = {
 } as const;
 
 export const radius = {
-  sm: 10,
-  md: 14,
-  lg: 20,
-  xl: 28,
+  sm: 12,
+  md: 18,
+  lg: 24,
+  xl: 30,
   pill: 999,
 } as const;
 
+/** Height of the 3D ledge under raised surfaces. */
+export const LEDGE = 5;
 /** Horizontal page gutter used by every screen. */
 export const GUTTER = 20;
 /** Space reserved at the bottom of scroll views for the floating tab bar. */
-export const TAB_BAR_SPACE = 120;
+export const TAB_BAR_SPACE = 130;

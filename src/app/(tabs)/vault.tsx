@@ -1,27 +1,28 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, FlatList, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Alert, FlatList, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ItemRow } from '@/components/item-row';
-import { Chip, IconButton, Txt } from '@/components/ui';
+import { Chip, Clay, enter, IconButton, Txt } from '@/components/ui';
 import { CATEGORIES } from '@/lib/categories';
 import { formatMoney, primaryTotal } from '@/lib/format';
 import { exportInventoryPdf } from '@/lib/pdf';
 import type { CategoryId } from '@/lib/types';
 import { getCoverage, type Coverage } from '@/lib/warranty';
 import { useVault } from '@/state/vault';
-import { fonts, GUTTER, radius, space, TAB_BAR_SPACE, useTheme } from '@/theme';
+import { fonts, GUTTER, space, TAB_BAR_SPACE, useTheme } from '@/theme';
 
 type Filter = 'all' | 'covered' | 'expiring' | 'expired' | 'return';
 
-const FILTERS: { id: Filter; label: string; test: (c: Coverage) => boolean }[] = [
-  { id: 'all', label: 'All', test: () => true },
-  { id: 'covered', label: 'Covered', test: (c) => c.status === 'active' || c.status === 'lifetime' },
-  { id: 'expiring', label: 'Expiring', test: (c) => c.status === 'expiring' },
-  { id: 'return', label: 'Returnable', test: (c) => c.returnOpen },
-  { id: 'expired', label: 'Expired', test: (c) => c.status === 'expired' || c.status === 'none' },
+const FILTERS: { id: Filter; label: string; emoji: string; test: (c: Coverage) => boolean }[] = [
+  { id: 'all', label: 'All', emoji: '📦', test: () => true },
+  { id: 'covered', label: 'Covered', emoji: '✅', test: (c) => c.status === 'active' || c.status === 'lifetime' },
+  { id: 'expiring', label: 'Ending', emoji: '⏳', test: (c) => c.status === 'expiring' },
+  { id: 'return', label: 'Returnable', emoji: '↩️', test: (c) => c.returnOpen },
+  { id: 'expired', label: 'Expired', emoji: '💤', test: (c) => c.status === 'expired' || c.status === 'none' },
 ];
 
 export default function VaultScreen() {
@@ -70,67 +71,48 @@ export default function VaultScreen() {
   };
 
   const header = (
-    <View style={{ paddingTop: insets.top + space.lg }}>
-      <View style={{ paddingHorizontal: GUTTER, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+    <View style={{ paddingTop: insets.top + space.md }}>
+      <View style={{ paddingHorizontal: GUTTER, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flex: 1 }}>
-          <Txt variant="overline" tone="secondary">
-            {visible.length} items · {formatMoney(total.amount, total.currency, true)}
+          <Txt variant="label" tone="secondary">
+            {visible.length} things · {formatMoney(total.amount, total.currency, true)}
             {total.mixed ? ` (${total.currency})` : ''}
           </Txt>
-          <Txt variant="display" style={{ marginTop: 6 }}>
-            Your vault
-          </Txt>
+          <Txt variant="display">Your vault 📦</Txt>
         </View>
         <IconButton icon="share" accessibilityLabel="Export inventory PDF" onPress={onExport} />
       </View>
 
-      <View
-        style={{
-          marginHorizontal: GUTTER,
-          marginTop: space.xl,
-          height: 50,
-          borderRadius: radius.pill,
-          backgroundColor: colors.surface,
-          borderWidth: 1,
-          borderColor: colors.line,
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: space.lg,
-          gap: space.sm,
-        }}>
-        <Feather name="search" size={18} color={colors.inkTertiary} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search name, store or serial"
-          placeholderTextColor={colors.inkTertiary}
-          selectionColor={colors.ink}
-          returnKeyType="search"
-          style={{ flex: 1, fontFamily: fonts.medium, fontSize: 15, color: colors.ink, paddingVertical: 0 }}
-        />
-        {query.length > 0 && (
-          <Pressable hitSlop={10} onPress={() => setQuery('')}>
-            <Feather name="x-circle" size={18} color={colors.inkTertiary} />
-          </Pressable>
-        )}
+      <View style={{ marginHorizontal: GUTTER, marginTop: space.lg }}>
+        <Clay ledge={4} rounded={20} contentStyle={{ height: 54, flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.lg, gap: space.sm }}>
+          <Feather name="search" size={19} color={colors.inkSecondary} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Find by name, store or serial"
+            placeholderTextColor={colors.inkTertiary}
+            selectionColor={colors.primary}
+            returnKeyType="search"
+            style={{ flex: 1, fontFamily: fonts.bold, fontSize: 16, color: colors.ink, paddingVertical: 0 }}
+          />
+          {query.length > 0 && (
+            <Pressable hitSlop={10} onPress={() => setQuery('')}>
+              <Feather name="x-circle" size={19} color={colors.inkTertiary} />
+            </Pressable>
+          )}
+        </Clay>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.sm, paddingTop: space.lg }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.sm, paddingTop: space.lg, paddingBottom: 2 }}>
         {FILTERS.map((f) => (
-          <Chip key={f.id} label={f.label} count={counts[f.id]} selected={filter === f.id} onPress={() => setFilter(f.id)} />
+          <Chip key={f.id} emoji={f.emoji} label={f.label} count={counts[f.id]} selected={filter === f.id} onPress={() => setFilter(f.id)} />
         ))}
       </ScrollView>
 
       {usedCategories.length > 1 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.sm, paddingTop: space.sm }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.sm, paddingTop: space.sm, paddingBottom: 2 }}>
           {usedCategories.map((cat) => (
-            <Chip
-              key={cat.id}
-              icon={cat.icon}
-              label={cat.label}
-              selected={category === cat.id}
-              onPress={() => setCategory(category === cat.id ? null : cat.id)}
-            />
+            <Chip key={cat.id} emoji={cat.emoji} label={cat.label} selected={category === cat.id} onPress={() => setCategory(category === cat.id ? null : cat.id)} />
           ))}
         </ScrollView>
       )}
@@ -148,21 +130,19 @@ export default function VaultScreen() {
       keyboardDismissMode="on-drag"
       contentContainerStyle={{ paddingBottom: TAB_BAR_SPACE + insets.bottom }}
       ItemSeparatorComponent={() => <View style={{ height: space.md }} />}
-      renderItem={({ item }) => (
-        <View style={{ paddingHorizontal: GUTTER }}>
+      renderItem={({ item, index }) => (
+        <Animated.View entering={enter(index)} style={{ paddingHorizontal: GUTTER }}>
           <ItemRow item={item} />
-        </View>
+        </Animated.View>
       )}
       ListEmptyComponent={
-        <View style={{ alignItems: 'center', paddingTop: 48, paddingHorizontal: 40, gap: space.sm }}>
-          <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm }}>
-            <Feather name={items.length ? 'search' : 'archive'} size={22} color={colors.inkSecondary} />
-          </View>
+        <View style={{ alignItems: 'center', paddingTop: 40, paddingHorizontal: 40, gap: space.sm }}>
+          <Text style={{ fontSize: 56 }}>{items.length ? '🔍' : '📭'}</Text>
           <Txt variant="title" style={{ textAlign: 'center' }}>
-            {items.length ? 'Nothing matches' : 'No items yet'}
+            {items.length ? 'Nothing here' : 'Empty vault'}
           </Txt>
           <Txt variant="body" tone="secondary" style={{ textAlign: 'center' }}>
-            {items.length ? 'Try a different search or filter.' : 'Tap + to add your first receipt.'}
+            {items.length ? 'Try another search or filter.' : 'Tap the pink + to add your first receipt.'}
           </Txt>
         </View>
       }

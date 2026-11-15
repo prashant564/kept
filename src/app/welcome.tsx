@@ -1,19 +1,32 @@
-import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, StatusPill, Txt, type IconName } from '@/components/ui';
+import { Button, Clay, EASE, enter, Tag, Txt } from '@/components/ui';
 import { ensureNotificationPermission } from '@/lib/notifications';
 import { useVault } from '@/state/vault';
-import { fonts, GUTTER, radius, space, useTheme } from '@/theme';
+import { fonts, GUTTER, space, useTheme } from '@/theme';
 
-const POINTS: { icon: IconName; text: string }[] = [
-  { icon: 'camera', text: 'Snap a receipt in seconds' },
-  { icon: 'bell', text: 'Reminders before returns and warranties end' },
-  { icon: 'file-text', text: 'Claim-ready PDF whenever you need it' },
+const POINTS = [
+  { emoji: '📸', text: 'Snap a receipt in seconds' },
+  { emoji: '⏰', text: 'Nudges before returns & warranties end' },
+  { emoji: '📄', text: 'Claim-ready proof when stuff breaks' },
 ];
+
+/** A sticker in the hero illustration that fades up into place. */
+function Floating({ children, delay, x, y, rotate }: { children: React.ReactNode; delay: number; x: number; y: number; rotate: number }) {
+  const pop = useSharedValue(0);
+  useEffect(() => {
+    pop.value = withDelay(delay, withTiming(1, { duration: 450, easing: EASE }));
+  }, [delay, pop]);
+  const style = useAnimatedStyle(() => ({
+    opacity: pop.value,
+    transform: [{ translateX: x }, { translateY: y + (1 - pop.value) * 14 }, { rotate: `${rotate}deg` }],
+  }));
+  return <Animated.View style={[{ position: 'absolute' }, style]}>{children}</Animated.View>;
+}
 
 export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
@@ -30,95 +43,79 @@ export default function WelcomeScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + space.xl, paddingBottom: insets.bottom + space.lg }}>
-      <View style={{ paddingHorizontal: GUTTER, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: colors.inverse, alignItems: 'center', justifyContent: 'center' }}>
-          <Feather name="check" size={16} color={colors.accent} />
-        </View>
-        <Txt variant="headline">Kept</Txt>
+    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.lg }}>
+      <Animated.View entering={enter(0)} style={{ paddingHorizontal: GUTTER, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={{ fontSize: 26 }}>🛡️</Text>
+        <Txt variant="title">Kept</Txt>
+      </Animated.View>
+
+      {/* Sticker pile */}
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginVertical: space.sm }}>
+        <Floating delay={100} x={0} y={0} rotate={-4}>
+          <Clay ledge={6} rounded={28} contentStyle={{ width: 210, padding: space.lg, gap: 10 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ width: 52, height: 52, borderRadius: 18, backgroundColor: colors.pinkSoft, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 30 }}>🎧</Text>
+              </View>
+              <Text style={{ fontFamily: fonts.black, fontSize: 22, color: colors.ink }}>$399</Text>
+            </View>
+            <View>
+              <Txt variant="headline">Headphones</Txt>
+              <Txt variant="caption" tone="secondary">
+                Best Buy · 12 Oct
+              </Txt>
+            </View>
+            <Tag tone="green" emoji="✅" label="2 yrs covered" />
+          </Clay>
+        </Floating>
+        <Floating delay={350} x={-122} y={-78} rotate={-14}>
+          <View style={{ width: 70, height: 70, borderRadius: 24, backgroundColor: colors.yellow, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 36 }}>🧾</Text>
+          </View>
+        </Floating>
+        <Floating delay={500} x={124} y={-70} rotate={12}>
+          <View style={{ width: 62, height: 62, borderRadius: 22, backgroundColor: colors.green, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 30 }}>⏰</Text>
+          </View>
+        </Floating>
+        <Floating delay={650} x={118} y={84} rotate={-10}>
+          <View style={{ width: 66, height: 66, borderRadius: 24, backgroundColor: colors.pink, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 32 }}>💻</Text>
+          </View>
+        </Floating>
+        <Floating delay={800} x={-116} y={88} rotate={8}>
+          <View style={{ width: 58, height: 58, borderRadius: 20, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 28 }}>📄</Text>
+          </View>
+        </Floating>
       </View>
 
-      {/* Receipt stack illustration */}
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ReceiptCard rotate={-9} offsetX={-54} offsetY={18} faded />
-        <ReceiptCard rotate={7} offsetX={56} offsetY={8} faded />
-        <ReceiptCard rotate={-2} offsetX={0} offsetY={0} />
-      </View>
-
-      <View style={{ paddingHorizontal: GUTTER, gap: space.xl }}>
-        <Txt variant="hero" style={{ fontSize: 50, lineHeight: 52 }}>
-          Every receipt,{'\n'}
-          <Txt variant="hero" style={{ fontFamily: fonts.displayItalic, fontSize: 50, lineHeight: 52 }}>
-            safely kept.
+      <View style={{ paddingHorizontal: GUTTER, gap: space.lg }}>
+        <Animated.View entering={enter(2)}>
+          <Txt variant="hero" style={{ fontSize: 42, lineHeight: 46 }}>
+            Never lose a{'\n'}
+            <Text style={{ color: colors.primary }}>receipt</Text> again.
           </Txt>
-        </Txt>
+        </Animated.View>
 
-        <View style={{ gap: space.md }}>
-          {POINTS.map((p) => (
-            <View key={p.icon} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' }}>
-                <Feather name={p.icon} size={15} color={colors.ink} />
+        <View style={{ gap: space.sm }}>
+          {POINTS.map((p, i) => (
+            <Animated.View key={p.text} entering={enter(3 + i)} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+              <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 19 }}>{p.emoji}</Text>
               </View>
               <Txt variant="bodyStrong" style={{ flex: 1 }}>
                 {p.text}
               </Txt>
-            </View>
+            </Animated.View>
           ))}
         </View>
 
-        <View style={{ gap: space.sm, marginTop: space.sm }}>
-          <Button title="Get started" icon="arrow-right" loading={busy === 'start'} disabled={busy !== null} onPress={() => finish(false)} />
-          <Button title="Try with sample items" kind="ghost" loading={busy === 'demo'} disabled={busy !== null} onPress={() => finish(true)} />
-        </View>
+        <Animated.View entering={enter(6)} style={{ gap: space.md, marginTop: space.xs }}>
+          <Button title="Let’s go!" emoji="🚀" loading={busy === 'start'} disabled={busy !== null} onPress={() => finish(false)} />
+          <Button title="Peek with sample items" kind="white" size="md" loading={busy === 'demo'} disabled={busy !== null} onPress={() => finish(true)} />
+        </Animated.View>
       </View>
-    </View>
-  );
-}
-
-function ReceiptCard({ rotate, offsetX, offsetY, faded }: { rotate: number; offsetX: number; offsetY: number; faded?: boolean }) {
-  const { colors } = useTheme();
-  return (
-    <View
-      style={{
-        position: 'absolute',
-        width: 190,
-        padding: space.lg,
-        borderRadius: radius.lg,
-        backgroundColor: faded ? colors.surfaceMuted : colors.surface,
-        borderWidth: 1,
-        borderColor: colors.line,
-        transform: [{ translateX: offsetX }, { translateY: offsetY }, { rotate: `${rotate}deg` }],
-        shadowColor: '#000',
-        shadowOpacity: faded ? 0.04 : 0.12,
-        shadowRadius: 24,
-        shadowOffset: { width: 0, height: 12 },
-        elevation: faded ? 2 : 10,
-        gap: 10,
-      }}>
-      {faded ? (
-        [70, 100, 55, 85, 40].map((w, i) => <View key={i} style={{ height: 8, width: `${w}%`, borderRadius: 4, backgroundColor: colors.surfaceSunken }} />)
-      ) : (
-        <>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: '#DDE6F7', alignItems: 'center', justifyContent: 'center' }}>
-              <Feather name="headphones" size={16} color="#15140F" />
-            </View>
-            <Txt variant="title" style={{ fontSize: 22 }}>
-              $399
-            </Txt>
-          </View>
-          <View>
-            <Txt variant="headline" style={{ fontSize: 15 }}>
-              Headphones
-            </Txt>
-            <Txt variant="caption" tone="secondary">
-              Best Buy · 12 Oct
-            </Txt>
-          </View>
-          <View style={{ borderTopWidth: 1, borderStyle: 'dashed', borderColor: colors.lineStrong }} />
-          <StatusPill status="active" label="2 yrs left" />
-        </>
-      )}
     </View>
   );
 }

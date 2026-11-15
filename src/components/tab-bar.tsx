@@ -1,129 +1,102 @@
 import Feather from '@expo/vector-icons/Feather';
-import { BlurView } from 'expo-blur';
 import { router } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useVault } from '@/state/vault';
-import { radius, useTheme } from '@/theme';
+import { fonts, useTheme } from '@/theme';
 
-import { tap, Txt, type IconName } from './ui';
+import { Clay, EASE, tap, type IconName } from './ui';
 
-const ICONS: Record<string, IconName> = {
-  index: 'home',
-  vault: 'archive',
-  settings: 'sliders',
+const TABS: Record<string, { icon: IconName; label: string }> = {
+  index: { icon: 'home', label: 'Home' },
+  vault: { icon: 'package', label: 'Vault' },
+  timeline: { icon: 'calendar', label: 'Upcoming' },
+  settings: { icon: 'smile', label: 'You' },
 };
 
-const LABELS: Record<string, string> = {
-  index: 'Home',
-  vault: 'Vault',
-  settings: 'Settings',
-};
+function TabButton({ name, focused, onPress }: { name: string; focused: boolean; onPress: () => void }) {
+  const { colors } = useTheme();
+  const lift = useSharedValue(focused ? 1 : 0);
+  useEffect(() => {
+    lift.value = withTiming(focused ? 1 : 0, { duration: 200, easing: EASE });
+  }, [focused, lift]);
+  const icon = useAnimatedStyle(() => ({ transform: [{ translateY: -lift.value * 2 }] }));
+  const dot = useAnimatedStyle(() => ({ opacity: lift.value, transform: [{ scale: lift.value }] }));
+  const tab = TABS[name] ?? { icon: 'circle', label: name };
 
-/** Floating glass pill with the three tabs and a raised "add" action. */
+  return (
+    <Pressable accessibilityRole="tab" accessibilityState={{ selected: focused }} accessibilityLabel={tab.label} onPress={onPress} style={styles.tab} hitSlop={4}>
+      <Animated.View style={icon}>
+        <Feather name={tab.icon} size={23} color={focused ? colors.primary : colors.inkTertiary} />
+      </Animated.View>
+      <Text style={[styles.label, { color: focused ? colors.primary : colors.inkTertiary }]}>{tab.label}</Text>
+      <Animated.View style={[styles.dot, { backgroundColor: colors.primary }, dot]} />
+    </Pressable>
+  );
+}
+
+/** Chunky floating bar with a raised "add" button in the middle. */
 export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
-  const { colors, dark } = useTheme();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { canAddItem } = useVault();
 
+  const press = useSharedValue(1);
+  const addStyle = useAnimatedStyle(() => ({ transform: [{ rotate: '-4deg' }, { scale: press.value }] }));
+
   const onAdd = () => {
     tap();
+    press.set(withSequence(withTiming(0.94, { duration: 70 }), withTiming(1, { duration: 160, easing: EASE })));
     router.push(canAddItem ? '/add' : '/paywall');
   };
 
-  return (
-    <View pointerEvents="box-none" style={[styles.wrap, { bottom: Math.max(insets.bottom, 12) + 4 }]}>
-      <View style={[styles.pill, { borderColor: colors.line, shadowColor: '#000' }]}>
-        {Platform.OS === 'ios' ? (
-          // Real glass on iOS; Android's blur needs a blurTarget, so it gets a solid surface instead.
-          <BlurView intensity={dark ? 50 : 70} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-        ) : null}
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: Platform.OS === 'ios' ? colors.tabBar : colors.surface }]} />
-        {state.routes.map((route, index) => {
-          const focused = state.index === index;
-          return (
-            <Pressable
-              key={route.key}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: focused }}
-              accessibilityLabel={LABELS[route.name]}
-              onPress={() => {
-                tap();
-                const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-                if (!focused && !event.defaultPrevented) navigateToTab(route.key);
-              }}
-              style={[styles.tab, focused && { backgroundColor: colors.inverse }]}>
-              <Feather name={ICONS[route.name] ?? 'circle'} size={18} color={focused ? colors.onInverse : colors.inkSecondary} />
-              {focused && (
-                <Txt variant="label" style={{ color: colors.onInverse }}>
-                  {LABELS[route.name]}
-                </Txt>
-              )}
-            </Pressable>
-          );
-        })}
-      </View>
+  const routes = state.routes;
+  const left = routes.slice(0, 2);
+  const right = routes.slice(2);
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Add item"
-        onPress={onAdd}
-        style={({ pressed }) => [
-          styles.add,
-          { backgroundColor: colors.accent, transform: [{ scale: pressed ? 0.94 : 1 }] },
-        ]}>
-        <Feather name="plus" size={26} color={colors.onAccent} />
-      </Pressable>
+  const renderTab = (route: (typeof routes)[number]) => {
+    const index = routes.indexOf(route);
+    const focused = state.index === index;
+    return (
+      <TabButton
+        key={route.key}
+        name={route.name}
+        focused={focused}
+        onPress={() => {
+          tap();
+          const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+          if (!focused && !event.defaultPrevented) navigateToTab(route.key);
+        }}
+      />
+    );
+  };
+
+  return (
+    <View pointerEvents="box-none" style={[styles.wrap, { bottom: Math.max(insets.bottom, 10) + 6 }]}>
+      <Clay ledge={6} rounded={28} contentStyle={styles.bar}>
+        {left.map(renderTab)}
+        <View style={{ width: 72 }} />
+        {right.map(renderTab)}
+      </Clay>
+      <Animated.View style={[styles.addWrap, addStyle]}>
+        <Clay color={colors.pink} ledgeColor={colors.pinkLedge} ledge={6} rounded={22} onPress={onAdd} accessibilityLabel="Add item" contentStyle={styles.add}>
+          <Feather name="plus" size={30} color="#FFFFFF" />
+        </Clay>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  pill: {
-    flex: 1,
-    height: 64,
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    elevation: 12,
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-  },
-  tab: {
-    height: 48,
-    minWidth: 48,
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-  },
-  add: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-  },
+  wrap: { position: 'absolute', left: 16, right: 16 },
+  bar: { height: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 6 },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', height: 70, gap: 2 },
+  label: { fontFamily: fonts.extrabold, fontSize: 11 },
+  dot: { position: 'absolute', bottom: 6, width: 5, height: 5, borderRadius: 3 },
+  addWrap: { position: 'absolute', left: '50%', marginLeft: -32, top: -22 },
+  add: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center' },
 });

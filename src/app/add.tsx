@@ -3,18 +3,20 @@ import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/d
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, Chip, Field, IconButton, OptionChips, tap, Txt, type IconName } from '@/components/ui';
-import { CATEGORIES } from '@/lib/categories';
+import { CurrencySheet } from '@/components/currency-sheet';
+import { Button, Chip, Clay, enter, Field, IconButton, OptionChips, tap, Txt } from '@/components/ui';
+import { CATEGORIES, itemEmoji } from '@/lib/categories';
+import { getCurrency } from '@/lib/currencies';
 import { formatDate, parseISODate, startOfToday, toISODate } from '@/lib/dates';
-import { CURRENCIES } from '@/lib/format';
-import { pickDocument, pickPhoto, takePhoto, type PickedFile } from '@/lib/files';
+import { deleteFile, pickDocument, pickPhoto, takePhoto, type PickedFile } from '@/lib/files';
 import type { CategoryId } from '@/lib/types';
 import { describeRemaining, getCoverage, RETURN_OPTIONS, WARRANTY_OPTIONS } from '@/lib/warranty';
 import { useVault } from '@/state/vault';
-import { GUTTER, radius, space, useTheme } from '@/theme';
+import { fonts, GUTTER, radius, space, useTheme } from '@/theme';
 
 export default function AddItemScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -36,8 +38,11 @@ export default function AddItemScreen() {
   const [files, setFiles] = useState<PickedFile[]>(existing?.attachments.map(({ uri, kind, name }) => ({ uri, kind, name })) ?? []);
   const [saving, setSaving] = useState(false);
   const [showIOSPicker, setShowIOSPicker] = useState(false);
+  const [currencyOpen, setCurrencyOpen] = useState(false);
 
   const coverage = useMemo(() => getCoverage({ purchaseDate, warrantyMonths, returnDays }), [purchaseDate, warrantyMonths, returnDays]);
+  const previewEmoji = itemEmoji({ name, category });
+  const savedUris = useMemo(() => new Set(existing?.attachments.map((a) => a.uri) ?? []), [existing]);
 
   const addFile = async (source: () => Promise<PickedFile | null>) => {
     try {
@@ -48,6 +53,20 @@ export default function AddItemScreen() {
     }
   };
 
+  const removeFile = (index: number) => {
+    setFiles((prev) => {
+      const f = prev[index];
+      // Files copied during this session aren't referenced anywhere else yet.
+      if (f && !savedUris.has(f.uri)) deleteFile(f.uri);
+      return prev.filter((_, j) => j !== index);
+    });
+  };
+
+  const close = () => {
+    files.filter((f) => !savedUris.has(f.uri)).forEach((f) => deleteFile(f.uri));
+    router.back();
+  };
+
   const openDatePicker = () => {
     tap();
     const value = parseISODate(purchaseDate);
@@ -56,24 +75,21 @@ export default function AddItemScreen() {
         value,
         mode: 'date',
         maximumDate: new Date(),
-        onChange: (event, date) => {
-          if (event.type === 'set' && date) setPurchaseDate(toISODate(date));
-        },
+        onValueChange: (_, date) => setPurchaseDate(toISODate(date)),
       });
     } else {
       setShowIOSPicker((v) => !v);
     }
   };
 
-  const cycleCurrency = () => {
+  const openCurrency = () => {
     tap();
-    const i = CURRENCIES.indexOf(currency as (typeof CURRENCIES)[number]);
-    setCurrency(CURRENCIES[(i + 1) % CURRENCIES.length]);
+    setCurrencyOpen(true);
   };
 
   const onSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Name required', 'Give the item a name so you can find it later.');
+      Alert.alert('What is it?', 'Give the item a name so you can find it later.');
       return;
     }
     const parsed = price.trim() ? Number(price.replace(',', '.')) : null;
@@ -96,7 +112,7 @@ export default function AddItemScreen() {
         existing?.id,
       );
       router.back();
-      if (!existing) setTimeout(() => router.push(`/item/${itemId}`), 250);
+      if (!existing) setTimeout(() => router.push({ pathname: '/item/[id]', params: { id: itemId, celebrate: '1' } }), 250);
     } catch (e) {
       Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
       setSaving(false);
@@ -105,73 +121,60 @@ export default function AddItemScreen() {
 
   const summary =
     coverage.status === 'lifetime'
-      ? 'Covered for life'
+      ? 'Covered for life 💫'
       : coverage.status === 'none'
         ? 'No manufacturer warranty'
         : coverage.expiresOn
           ? `${coverage.status === 'expired' ? 'Expired' : 'Covered until'} ${formatDate(coverage.expiresOn)}`
           : '';
 
+  const sectionLabel = (t: string) => (
+    <Txt variant="tiny" tone="secondary" style={{ marginBottom: space.sm, marginLeft: 6 }}>
+      {t}
+    </Txt>
+  );
+
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Header */}
-      <View
-        style={{
-          paddingTop: Platform.OS === 'ios' ? space.lg : insets.top + space.sm,
-          paddingHorizontal: GUTTER,
-          paddingBottom: space.md,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}>
-        <IconButton icon="x" accessibilityLabel="Close" onPress={() => router.back()} />
-        <Txt variant="headline">{existing ? 'Edit item' : 'New item'}</Txt>
-        <View style={{ width: 44 }} />
+      <View style={{ paddingTop: Platform.OS === 'ios' ? space.lg : insets.top + space.sm, paddingHorizontal: GUTTER, paddingBottom: space.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <IconButton icon="x" accessibilityLabel="Close" onPress={close} />
+        <Txt variant="title">{existing ? 'Edit item' : 'New item'}</Txt>
+        <Animated.View key={previewEmoji} entering={FadeIn.duration(200)} style={{ width: 50, height: 50, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 28 }}>{previewEmoji}</Text>
+        </Animated.View>
       </View>
 
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 140, gap: space.xxl }}
-        showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 150, gap: space.xl }} showsVerticalScrollIndicator={false}>
         {/* Receipt capture */}
-        <View>
-          <Txt variant="overline" tone="secondary" style={{ marginBottom: space.sm, marginLeft: 4 }}>
-            Receipt & photos
-          </Txt>
+        <Animated.View entering={enter(0)}>
+          {sectionLabel('Receipt & photos')}
           {files.length === 0 ? (
-            <View
-              style={{
-                borderRadius: radius.lg,
-                borderWidth: 1.5,
-                borderStyle: 'dashed',
-                borderColor: colors.lineStrong,
-                backgroundColor: colors.surface,
-                padding: space.xl,
-                gap: space.lg,
-              }}>
-              <View style={{ gap: 4 }}>
+            <Clay contentStyle={{ padding: space.lg, gap: space.lg }}>
+              <View style={{ gap: 2 }}>
+                <Text style={{ fontSize: 34, textAlign: 'center' }}>🧾</Text>
                 <Txt variant="title" style={{ textAlign: 'center' }}>
                   Add the receipt
                 </Txt>
                 <Txt variant="caption" tone="secondary" style={{ textAlign: 'center' }}>
-                  Your proof of purchase lives here. Paper receipts fade; photos don’t.
+                  Paper fades. Photos don’t.
                 </Txt>
               </View>
               <View style={{ flexDirection: 'row', gap: space.sm }}>
-                <CaptureButton icon="camera" label="Camera" primary onPress={() => addFile(takePhoto)} />
-                <CaptureButton icon="image" label="Photos" onPress={() => addFile(pickPhoto)} />
-                <CaptureButton icon="file" label="PDF" onPress={() => addFile(pickDocument)} />
+                <CaptureButton emoji="📸" label="Camera" kind="primary" onPress={() => addFile(takePhoto)} />
+                <CaptureButton emoji="🖼️" label="Photos" kind="soft" onPress={() => addFile(pickPhoto)} />
+                <CaptureButton emoji="📄" label="PDF" kind="soft" onPress={() => addFile(pickDocument)} />
               </View>
-            </View>
+            </Clay>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -GUTTER }} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.md }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -GUTTER }} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.md, paddingBottom: 6 }}>
               {files.map((f, i) => (
-                <View key={f.uri} style={{ width: 104, height: 136 }}>
+                <Animated.View key={f.uri} entering={FadeIn.duration(220)} style={{ width: 106, height: 140 }}>
                   {f.kind === 'image' ? (
                     <Image source={{ uri: f.uri }} style={{ width: '100%', height: '100%', borderRadius: radius.md }} contentFit="cover" />
                   ) : (
-                    <View style={{ flex: 1, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', padding: 8, gap: 6 }}>
-                      <Feather name="file-text" size={26} color={colors.danger} />
+                    <View style={{ flex: 1, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', padding: 8, gap: 6 }}>
+                      <Text style={{ fontSize: 34 }}>📄</Text>
                       <Txt variant="caption" numberOfLines={2} style={{ textAlign: 'center', fontSize: 11 }}>
                         {f.name}
                       </Txt>
@@ -180,45 +183,37 @@ export default function AddItemScreen() {
                   <Pressable
                     accessibilityLabel="Remove file"
                     hitSlop={8}
-                    onPress={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
-                    style={{ position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(21,20,15,0.7)', alignItems: 'center', justifyContent: 'center' }}>
-                    <Feather name="x" size={14} color="#fff" />
+                    onPress={() => removeFile(i)}
+                    style={{ position: 'absolute', top: -6, right: -6, width: 28, height: 28, borderRadius: 14, backgroundColor: colors.pink, borderWidth: 3, borderColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+                    <Feather name="x" size={13} color="#fff" />
                   </Pressable>
-                </View>
+                </Animated.View>
               ))}
-              <View style={{ width: 104, height: 136, gap: space.sm }}>
+              <View style={{ width: 106, height: 140, gap: 6 }}>
                 {(
                   [
-                    ['camera', takePhoto],
-                    ['image', pickPhoto],
-                    ['file', pickDocument],
+                    ['📸', takePhoto],
+                    ['🖼️', pickPhoto],
+                    ['📄', pickDocument],
                   ] as const
-                ).map(([icon, fn]) => (
-                  <Pressable
-                    key={icon}
-                    onPress={() => addFile(fn)}
-                    style={({ pressed }) => ({
-                      flex: 1,
-                      borderRadius: radius.sm,
-                      borderWidth: 1,
-                      borderStyle: 'dashed',
-                      borderColor: colors.lineStrong,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: pressed ? colors.surfaceMuted : 'transparent',
-                    })}>
-                    <Feather name={icon} size={16} color={colors.inkSecondary} />
-                  </Pressable>
+                ).map(([emoji, fn]) => (
+                  <Clay key={emoji} ledge={3} rounded={14} onPress={() => addFile(fn)} style={{ flex: 1 }} contentStyle={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 18 }}>{emoji}</Text>
+                  </Clay>
                 ))}
               </View>
             </ScrollView>
           )}
-        </View>
+        </Animated.View>
 
-        <Field label="Item" icon="box" placeholder="e.g. Sony WH-1000XM6" value={name} onChangeText={setName} autoFocus={!existing} returnKeyType="next" />
-        <Field label="Store" icon="shopping-bag" placeholder="Where did you buy it?" value={store} onChangeText={setStore} />
+        <Animated.View entering={enter(1)}>
+          <Field label="What is it?" emoji="✏️" placeholder="e.g. Sony WH-1000XM6" value={name} onChangeText={setName} autoFocus={!existing} returnKeyType="next" />
+        </Animated.View>
+        <Animated.View entering={enter(2)}>
+          <Field label="Where from?" emoji="🏬" placeholder="Store or website" value={store} onChangeText={setStore} />
+        </Animated.View>
 
-        <View style={{ flexDirection: 'row', gap: space.md }}>
+        <Animated.View entering={enter(3)} style={{ flexDirection: 'row', gap: space.md }}>
           <Field
             label="Price"
             style={{ flex: 1 }}
@@ -227,108 +222,104 @@ export default function AddItemScreen() {
             value={price}
             onChangeText={setPrice}
             right={
-              <Pressable onPress={cycleCurrency} hitSlop={8} style={{ backgroundColor: colors.surfaceMuted, borderRadius: radius.pill, paddingHorizontal: 10, height: 28, justifyContent: 'center' }}>
-                <Txt variant="label">{currency}</Txt>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Currency: ${currency}. Change`}
+                onPress={openCurrency}
+                hitSlop={8}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primarySoft, borderRadius: 10, paddingHorizontal: 8, height: 30 }}>
+                <Text style={{ fontSize: 13 }}>{getCurrency(currency).flag}</Text>
+                <Text style={{ fontFamily: fonts.black, fontSize: 12, color: colors.primary }}>{currency}</Text>
+                <Feather name="chevron-down" size={13} color={colors.primary} />
               </Pressable>
             }
           />
           <View style={{ flex: 1 }}>
-            <Txt variant="overline" tone="secondary" style={{ marginBottom: space.sm, marginLeft: 4 }}>
-              Purchased
-            </Txt>
-            <Pressable
-              onPress={openDatePicker}
-              style={{ height: 54, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.lg }}>
-              <Feather name="calendar" size={17} color={colors.inkTertiary} />
-              <Txt variant="bodyStrong" style={{ fontSize: 16 }}>
-                {formatDate(parseISODate(purchaseDate))}
-              </Txt>
-            </Pressable>
+            {sectionLabel('Bought on')}
+            <Clay ledge={3} rounded={radius.md} onPress={openDatePicker} contentStyle={{ height: 60, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.lg }}>
+              <Text style={{ fontSize: 18 }}>📅</Text>
+              <Txt variant="headline">{formatDate(parseISODate(purchaseDate))}</Txt>
+            </Clay>
           </View>
-        </View>
+        </Animated.View>
         {showIOSPicker && Platform.OS === 'ios' && (
-          <DateTimePicker
-            value={parseISODate(purchaseDate)}
-            mode="date"
-            display="inline"
-            maximumDate={new Date()}
-            accentColor={colors.ink}
-            onChange={(_, date) => date && setPurchaseDate(toISODate(date))}
-          />
+          <DateTimePicker value={parseISODate(purchaseDate)} mode="date" display="inline" maximumDate={new Date()} accentColor={colors.primary} onValueChange={(_, date) => setPurchaseDate(toISODate(date))} />
         )}
 
-        <View>
-          <Txt variant="overline" tone="secondary" style={{ marginBottom: space.sm, marginLeft: 4 }}>
-            Category
-          </Txt>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -GUTTER }} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.sm }}>
+        <Animated.View entering={enter(4)}>
+          {sectionLabel('Category')}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -GUTTER }} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: space.sm, paddingBottom: 2 }}>
             {CATEGORIES.map((c) => (
-              <Chip key={c.id} icon={c.icon} label={c.label} selected={category === c.id} onPress={() => setCategory(c.id)} />
+              <Chip key={c.id} emoji={c.emoji} label={c.label} selected={category === c.id} onPress={() => setCategory(c.id)} />
             ))}
           </ScrollView>
-        </View>
+        </Animated.View>
 
         {/* Coverage */}
-        <View style={{ backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: space.lg, gap: space.lg }}>
-          <View>
-            <Txt variant="overline" tone="secondary" style={{ marginBottom: space.md }}>
-              Warranty
-            </Txt>
-            <OptionChips options={WARRANTY_OPTIONS.map((o) => ({ label: o.label, value: o.months }))} value={warrantyMonths} onChange={setWarrantyMonths} />
-          </View>
-          <View>
-            <Txt variant="overline" tone="secondary" style={{ marginBottom: space.md }}>
-              Return window
-            </Txt>
-            <OptionChips options={RETURN_OPTIONS.map((o) => ({ label: o.label, value: o.days }))} value={returnDays} onChange={setReturnDays} />
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: space.md }}>
-            <Feather name="shield" size={18} color={coverage.status === 'expired' ? colors.danger : colors.positive} />
-            <View style={{ flex: 1 }}>
-              <Txt variant="bodyStrong">{summary}</Txt>
-              {coverage.daysLeft !== null && (
-                <Txt variant="caption" tone="secondary">
-                  {describeRemaining(coverage.daysLeft)}
-                  {coverage.returnOpen && coverage.returnDeadline ? ` · return by ${formatDate(coverage.returnDeadline)}` : ''}
-                </Txt>
-              )}
+        <Animated.View entering={enter(5)}>
+          <Clay contentStyle={{ padding: space.lg, gap: space.lg }}>
+            <View>
+              <Txt variant="headline" style={{ marginBottom: space.md }}>
+                🛡️ Warranty
+              </Txt>
+              <OptionChips options={WARRANTY_OPTIONS.map((o) => ({ label: o.label, value: o.months }))} value={warrantyMonths} onChange={setWarrantyMonths} />
             </View>
-          </View>
-        </View>
+            <View>
+              <Txt variant="headline" style={{ marginBottom: space.md }}>
+                ↩️ Return window
+              </Txt>
+              <OptionChips options={RETURN_OPTIONS.map((o) => ({ label: o.label, value: o.days }))} value={returnDays} onChange={setReturnDays} />
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: coverage.status === 'expired' ? colors.redSoft : colors.greenSoft, borderRadius: radius.md, padding: space.md }}>
+              <Text style={{ fontSize: 26 }}>{coverage.status === 'expired' ? '😬' : coverage.status === 'none' ? '🤷' : '🎉'}</Text>
+              <View style={{ flex: 1 }}>
+                <Txt variant="headline">{summary}</Txt>
+                {coverage.daysLeft !== null && (
+                  <Txt variant="caption" tone="secondary">
+                    {describeRemaining(coverage.daysLeft)}
+                    {coverage.returnOpen && coverage.returnDeadline ? ` · return by ${formatDate(coverage.returnDeadline)}` : ''}
+                  </Txt>
+                )}
+              </View>
+            </View>
+          </Clay>
+        </Animated.View>
 
-        <Field label="Serial number" icon="hash" placeholder="Optional" value={serial} onChangeText={setSerial} autoCapitalize="characters" />
-        <Field label="Notes" icon="edit-3" placeholder="Extended warranty, model number, anything useful" value={notes} onChangeText={setNotes} multiline />
+        <Field label="Serial number" emoji="#️⃣" placeholder="Optional" value={serial} onChangeText={setSerial} autoCapitalize="characters" />
+        <Field label="Notes" emoji="📝" placeholder="Extended warranty, model number…" value={notes} onChangeText={setNotes} multiline />
       </ScrollView>
 
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: GUTTER, paddingTop: space.md, paddingBottom: insets.bottom + space.md, backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.line }}>
-        <Button title={existing ? 'Save changes' : 'Save to vault'} icon="check" loading={saving} onPress={onSave} />
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: GUTTER, paddingTop: space.md, paddingBottom: insets.bottom + space.md, backgroundColor: colors.bg }}>
+        <Button title={existing ? 'Save changes' : 'Save to vault'} emoji={existing ? '💾' : '🛡️'} loading={saving} onPress={onSave} />
       </View>
+      <CurrencySheet
+        visible={currencyOpen}
+        value={currency}
+        title="Paid in"
+        onSelect={(code) => {
+          setCurrency(code);
+          setCurrencyOpen(false);
+        }}
+        onClose={() => setCurrencyOpen(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
 
-function CaptureButton({ icon, label, onPress, primary }: { icon: IconName; label: string; onPress: () => void; primary?: boolean }) {
+function CaptureButton({ emoji, label, onPress, kind }: { emoji: string; label: string; onPress: () => void; kind: 'primary' | 'soft' }) {
   const { colors } = useTheme();
+  const primary = kind === 'primary';
   return (
-    <Pressable
-      onPress={() => {
-        tap();
-        onPress();
-      }}
-      style={({ pressed }) => ({
-        flex: 1,
-        height: 76,
-        borderRadius: radius.md,
-        backgroundColor: primary ? colors.inverse : colors.surfaceMuted,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        opacity: pressed ? 0.8 : 1,
-      })}>
-      <Feather name={icon} size={20} color={primary ? colors.onInverse : colors.ink} />
-      <Txt variant="label" style={{ color: primary ? colors.onInverse : colors.ink }}>
-        {label}
-      </Txt>
-    </Pressable>
+    <Clay
+      color={primary ? colors.primary : colors.surfaceMuted}
+      ledgeColor={primary ? colors.primaryLedge : colors.ledge}
+      ledge={4}
+      rounded={18}
+      onPress={onPress}
+      style={{ flex: 1 }}
+      contentStyle={{ height: 84, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+      <Text style={{ fontSize: 26 }}>{emoji}</Text>
+      <Text style={{ fontFamily: fonts.black, fontSize: 14, color: primary ? '#FFFFFF' : colors.ink }}>{label}</Text>
+    </Clay>
   );
 }
